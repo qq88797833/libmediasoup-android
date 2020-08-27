@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/optional.h"
 #include "base/template_util.h"
 
@@ -447,10 +447,22 @@ typename Map::iterator TryEmplace(Map& map,
                                   std::forward<Args>(args)...);
 }
 
-// Returns true if the container is sorted.
+// Returns true if the container is sorted. Requires constexpr std::begin/end,
+// which exists for arrays in C++14.
+// Note that std::is_sorted is constexpr beginning C++20 and this should be
+// switched to use it when C++20 is supported.
 template <typename Container>
-bool STLIsSorted(const Container& cont) {
-  return std::is_sorted(std::begin(cont), std::end(cont));
+constexpr bool STLIsSorted(const Container& cont) {
+  auto it = std::begin(cont);
+  const auto end = std::end(cont);
+  if (it == end)
+    return true;
+
+  for (auto prev = it++; it != end; prev = it++) {
+    if (*it < *prev)
+      return false;
+  }
+  return true;
 }
 
 // Returns a new ResultType containing the difference of two sorted containers.
@@ -561,14 +573,6 @@ size_t EraseIf(std::vector<T, Allocator>& container, Predicate pred) {
   return removed;
 }
 
-template <class T, class Allocator, class Value>
-size_t Erase(std::forward_list<T, Allocator>& container, const Value& value) {
-  // Unlike std::forward_list::remove, this function template accepts
-  // heterogeneous types and does not force a conversion to the container's
-  // value type before invoking the == operator.
-  return EraseIf(container, [&](const T& cur) { return cur == value; });
-}
-
 template <class T, class Allocator, class Predicate>
 size_t EraseIf(std::forward_list<T, Allocator>& container, Predicate pred) {
   // Note: std::forward_list does not have a size() API, thus we need to use the
@@ -577,14 +581,6 @@ size_t EraseIf(std::forward_list<T, Allocator>& container, Predicate pred) {
   size_t old_size = std::distance(container.begin(), container.end());
   container.remove_if(pred);
   return old_size - std::distance(container.begin(), container.end());
-}
-
-template <class T, class Allocator, class Value>
-size_t Erase(std::list<T, Allocator>& container, const Value& value) {
-  // Unlike std::list::remove, this function template accepts heterogeneous
-  // types and does not force a conversion to the container's value type before
-  // invoking the == operator.
-  return EraseIf(container, [&](const T& cur) { return cur == value; });
 }
 
 template <class T, class Allocator, class Predicate>
@@ -661,6 +657,22 @@ size_t EraseIf(
   return internal::IterateAndEraseIf(container, pred);
 }
 
+template <class T, class Allocator, class Value>
+size_t Erase(std::forward_list<T, Allocator>& container, const Value& value) {
+  // Unlike std::forward_list::remove, this function template accepts
+  // heterogeneous types and does not force a conversion to the container's
+  // value type before invoking the == operator.
+  return EraseIf(container, [&](const T& cur) { return cur == value; });
+}
+
+template <class T, class Allocator, class Value>
+size_t Erase(std::list<T, Allocator>& container, const Value& value) {
+  // Unlike std::list::remove, this function template accepts heterogeneous
+  // types and does not force a conversion to the container's value type before
+  // invoking the == operator.
+  return EraseIf(container, [&](const T& cur) { return cur == value; });
+}
+
 // A helper class to be used as the predicate with |EraseIf| to implement
 // in-place set intersection. Helps implement the algorithm of going through
 // each container an element at a time, erasing elements from the first
@@ -699,6 +711,14 @@ T* OptionalOrNullptr(base::Optional<T>& optional) {
 template <class T>
 const T* OptionalOrNullptr(const base::Optional<T>& optional) {
   return optional.has_value() ? &optional.value() : nullptr;
+}
+
+// Helper for creating an Optional<T> from a potentially nullptr T*.
+template <class T>
+base::Optional<T> OptionalFromPtr(const T* value) {
+  if (value)
+    return base::Optional<T>(*value);
+  return base::nullopt;
 }
 
 }  // namespace base

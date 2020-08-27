@@ -8,13 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef RTC_BASE_CRITICAL_SECTION_H_
-#define RTC_BASE_CRITICAL_SECTION_H_
+#ifndef RTC_BASE_DEPRECATED_RECURSIVE_CRITICAL_SECTION_H_
+#define RTC_BASE_DEPRECATED_RECURSIVE_CRITICAL_SECTION_H_
 
-#include "rtc_base/checks.h"
 #include "rtc_base/constructor_magic.h"
 #include "rtc_base/platform_thread_types.h"
-#include "rtc_base/system/rtc_export.h"
 #include "rtc_base/thread_annotations.h"
 
 #if defined(WEBRTC_WIN)
@@ -43,13 +41,18 @@
 
 namespace rtc {
 
+// NOTE: This class is deprecated. Please use webrtc::Mutex instead!
+// Search using https://www.google.com/?q=recursive+lock+considered+harmful
+// to find the reasons.
+//
 // Locking methods (Enter, TryEnter, Leave)are const to permit protecting
-// members inside a const context without requiring mutable CriticalSections
-// everywhere. CriticalSection is reentrant lock.
-class RTC_LOCKABLE RTC_EXPORT CriticalSection {
+// members inside a const context without requiring mutable
+// RecursiveCriticalSections everywhere. RecursiveCriticalSection is
+// reentrant lock.
+class RTC_LOCKABLE RecursiveCriticalSection {
  public:
-  CriticalSection();
-  ~CriticalSection();
+  RecursiveCriticalSection();
+  ~RecursiveCriticalSection();
 
   void Enter() const RTC_EXCLUSIVE_LOCK_FUNCTION();
   bool TryEnter() const RTC_EXCLUSIVE_TRYLOCK_FUNCTION(true);
@@ -87,37 +90,15 @@ class RTC_LOCKABLE RTC_EXPORT CriticalSection {
 // CritScope, for serializing execution through a scope.
 class RTC_SCOPED_LOCKABLE CritScope {
  public:
-  explicit CritScope(const CriticalSection* cs) RTC_EXCLUSIVE_LOCK_FUNCTION(cs);
+  explicit CritScope(const RecursiveCriticalSection* cs)
+      RTC_EXCLUSIVE_LOCK_FUNCTION(cs);
   ~CritScope() RTC_UNLOCK_FUNCTION();
 
  private:
-  const CriticalSection* const cs_;
+  const RecursiveCriticalSection* const cs_;
   RTC_DISALLOW_COPY_AND_ASSIGN(CritScope);
-};
-
-// A lock used to protect global variables. Do NOT use for other purposes.
-class RTC_LOCKABLE GlobalLock {
- public:
-  constexpr GlobalLock() : lock_acquired_(0) {}
-
-  void Lock() RTC_EXCLUSIVE_LOCK_FUNCTION();
-  void Unlock() RTC_UNLOCK_FUNCTION();
-
- private:
-  volatile int lock_acquired_;
-};
-
-// GlobalLockScope, for serializing execution through a scope.
-class RTC_SCOPED_LOCKABLE GlobalLockScope {
- public:
-  explicit GlobalLockScope(GlobalLock* lock) RTC_EXCLUSIVE_LOCK_FUNCTION(lock);
-  ~GlobalLockScope() RTC_UNLOCK_FUNCTION();
-
- private:
-  GlobalLock* const lock_;
-  RTC_DISALLOW_COPY_AND_ASSIGN(GlobalLockScope);
 };
 
 }  // namespace rtc
 
-#endif  // RTC_BASE_CRITICAL_SECTION_H_
+#endif  // RTC_BASE_DEPRECATED_RECURSIVE_CRITICAL_SECTION_H_

@@ -15,7 +15,7 @@
 #include <windows.h>
 #endif  // !OS_WIN
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if defined(OS_MAC)
 #include <IOKit/IOTypes.h>
 
 #include "base/mac/scoped_cftyperef.h"
@@ -47,6 +47,8 @@ class BASE_EXPORT PowerMonitorDeviceSource : public PowerMonitorSource {
 #endif
 
  private:
+  friend class PowerMonitorDeviceSourceTest;
+
 #if defined(OS_WIN)
   // Represents a message-only window for power message handling on Windows.
   // Only allow PowerMonitor to create it.
@@ -67,25 +69,32 @@ class BASE_EXPORT PowerMonitorDeviceSource : public PowerMonitorSource {
   };
 #endif  // OS_WIN
 
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   void PlatformInit();
   void PlatformDestroy();
+#endif  // OS_APPLE
 
-#if !defined(OS_IOS)
+#if defined(OS_MAC)
   // Callback from IORegisterForSystemPower(). |refcon| is the |this| pointer.
   static void SystemPowerEventCallback(void* refcon,
                                        io_service_t service,
                                        natural_t message_type,
                                        void* message_argument);
-#endif  // !OS_IOS
-#endif  // OS_MACOSX
+#endif  // OS_MAC
 
   // Platform-specific method to check whether the system is currently
   // running on battery power.  Returns true if running on batteries,
   // false otherwise.
   bool IsOnBatteryPowerImpl() override;
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if defined(OS_ANDROID)
+  int GetRemainingBatteryCapacity() override;
+#endif  // defined(OS_ANDROID)
+
+#if defined(OS_MAC)
+  // PowerMonitorSource:
+  PowerObserver::DeviceThermalState GetCurrentThermalState() override;
+
   // Reference to the system IOPMrootDomain port.
   io_connect_t power_manager_port_ = IO_OBJECT_NULL;
 

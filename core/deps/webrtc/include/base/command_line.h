@@ -55,7 +55,6 @@ class BASE_EXPORT CommandLine {
   CommandLine(int argc, const CharType* const* argv);
   explicit CommandLine(const StringVector& argv);
 
-  // Override copy and assign to ensure |switches_by_stringpiece_| is valid.
   CommandLine(const CommandLine& other);
   CommandLine& operator=(const CommandLine& other);
 
@@ -119,7 +118,7 @@ class BASE_EXPORT CommandLine {
 
 #if defined(OS_WIN)
   // Returns the command-line string in the proper format for the Windows shell,
-  // ending with the argument placeholder "--single-argument=%1". The single-
+  // ending with the argument placeholder "--single-argument %1". The single-
   // argument switch prevents unexpected parsing of arguments from other
   // software that cannot be trusted to escape double quotes when substituting
   // into a placeholder (e.g., "%1" placeholders populated by the Windows
@@ -166,7 +165,7 @@ class BASE_EXPORT CommandLine {
   void AppendSwitchPath(const std::string& switch_string,
                         const FilePath& path);
   void AppendSwitchNative(const std::string& switch_string,
-                          const StringType& value);
+                          StringPieceType value);
   void AppendSwitchASCII(const std::string& switch_string,
                          const std::string& value);
 
@@ -218,9 +217,11 @@ class BASE_EXPORT CommandLine {
 
 #if defined(OS_WIN)
   // Initializes by parsing |raw_command_line_string_|, treating everything
-  // after |single_arg_switch_string| + "=" as the command line's single
-  // argument, and dropping any arguments previously parsed. The command line
-  // must contain |single_arg_switch_string| followed by "=".
+  // after |single_arg_switch_string| + <a single character> as the command
+  // line's single argument, and dropping any arguments previously parsed. The
+  // command line must contain |single_arg_switch_string|, and the argument, if
+  // present, must be separated from |single_arg_switch_string| by one
+  // character.
   // NOTE: the single-argument switch is not preserved after parsing;
   // GetCommandLineStringForShell() must be used to reproduce the original
   // command-line string with single-argument switch.

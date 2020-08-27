@@ -8,14 +8,14 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef SDK_ANDROID_NATIVE_API_BASE_NETWORK_MONITOR_H_
-#define SDK_ANDROID_NATIVE_API_BASE_NETWORK_MONITOR_H_
+#ifndef SDK_ANDROID_NATIVE_API_NETWORK_MONITOR_NETWORK_MONITOR_H_
+#define SDK_ANDROID_NATIVE_API_NETWORK_MONITOR_NETWORK_MONITOR_H_
 
 #include <jni.h>
 
 #include <memory>
 
-#include "rtc_base/network_monitor.h"
+#include "rtc_base/network_monitor_factory.h"
 
 namespace webrtc {
 
@@ -33,4 +33,4 @@ CreateAndroidNetworkMonitorFactory();
 
 }  // namespace webrtc
 
-#endif  // SDK_ANDROID_NATIVE_API_BASE_NETWORK_MONITOR_H_
+#endif  // SDK_ANDROID_NATIVE_API_NETWORK_MONITOR_NETWORK_MONITOR_H_

@@ -5,8 +5,7 @@
 #ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_ADDRESS_POOL_MANAGER_H_
 #define BASE_ALLOCATOR_PARTITION_ALLOCATOR_ADDRESS_POOL_MANAGER_H_
 
-#include <map>
-#include <memory>
+#include <bitset>
 
 #include "base/allocator/partition_allocator/partition_alloc_constants.h"
 #include "base/atomicops.h"
@@ -21,20 +20,27 @@ namespace internal {
 
 using pool_handle = unsigned;
 
-// The address space reservation is supported only on 64-bit architecture.
-#if defined(ARCH_CPU_64_BITS)
+// The feature is not applicable to 32-bit address space.
+// ARCH_CPU_64_BITS implies 64-bit instruction set, but not necessarily 64-bit
+// address space. The only known case where address space is 32-bit is NaCl, so
+// eliminate it explicitly. static_assert below ensures that other won't slip
+// through.
+#if defined(ARCH_CPU_64_BITS) && !defined(OS_NACL)
 
-// AddressPoolManager takes a reserved virtual address space and manages the
-// address space allocation.
-// AddressPoolManager supports up to 2 pools. One pool manages one contiguous
-// reserved address space. Alloc() takes the pool handle and returns
-// address regions from the specified pool. Free() also takes the pool handle
-// and returns the address region back to the manager.
+static_assert(sizeof(size_t) >= 8, "Nee more than 32-bit address space");
+
+// AddressPoolManager takes a reserved virtual address space and manages address
+// space allocation.
+//
+// AddressPoolManager (currently) supports up to 2 pools. Each pool manages a
+// contiguous reserved address space. Alloc() takes a pool_handle and returns
+// address regions from the specified pool. Free() also takes a pool_handle and
+// returns the address region back to the manager.
 class BASE_EXPORT AddressPoolManager {
  public:
   static AddressPoolManager* GetInstance();
 
-  pool_handle Add(uintptr_t address, size_t length, size_t align);
+  pool_handle Add(uintptr_t address, size_t length);
   void Remove(pool_handle handle);
   char* Alloc(pool_handle handle, size_t length);
   void Free(pool_handle handle, void* ptr, size_t length);
@@ -44,38 +50,49 @@ class BASE_EXPORT AddressPoolManager {
   AddressPoolManager();
   ~AddressPoolManager();
 
-  pool_handle AllocHandle();
-
   class Pool {
    public:
-    Pool(uintptr_t ptr, size_t length, size_t align);
+    Pool();
     ~Pool();
+
+    void Initialize(uintptr_t ptr, size_t length);
+    bool IsInitialized();
+    void Reset();
 
     uintptr_t FindChunk(size_t size);
     void FreeChunk(uintptr_t address, size_t size);
 
    private:
+    // The bitset stores the allocation state of the address pool. 1 bit per
+    // super-page: 1 = allocated, 0 = free.
+    static constexpr size_t kGiB = 1024 * 1024 * 1024;
+    static constexpr size_t kMaxSupportedSize = 16 * kGiB;
+    static constexpr size_t kMaxBits = kMaxSupportedSize / kSuperPageSize;
     base::Lock lock_;
-    std::map<uintptr_t, size_t> free_chunks_ GUARDED_BY(lock_);
-    // All returned chunks will be aligned on this align_ and all chunks' size
-    // will be a multiple of |align_|.
-    const uintptr_t align_ = 0;
-#if DCHECK_IS_ON()
-    const uintptr_t address_begin_;
-    const uintptr_t address_end_;
-#endif
+    std::bitset<kMaxBits> alloc_bitset_ GUARDED_BY(lock_);
+    // An index of a bit in the bitset before which we know for sure there all
+    // 1s. This is a best-effort hint in the sense that there still may be lots
+    // of 1s after this index, but at least we know there is no point in
+    // starting the search before it.
+    size_t bit_hint_ GUARDED_BY(lock_);
 
-    DISALLOW_COPY_AND_ASSIGN(Pool);
+    size_t total_bits_ = 0;
+    uintptr_t address_begin_ = 0;
+#if DCHECK_IS_ON()
+    uintptr_t address_end_ = 0;
+#endif
   };
 
+  ALWAYS_INLINE Pool* GetPool(pool_handle handle);
+
   static constexpr size_t kNumPools = 2;
-  std::unique_ptr<Pool> pools_[kNumPools];
+  Pool pools_[kNumPools];
 
   friend class NoDestructor<AddressPoolManager>;
   DISALLOW_COPY_AND_ASSIGN(AddressPoolManager);
 };
 
-#endif  // defined(ARCH_CPU_64_BITS)
+#endif  // defined(ARCH_CPU_64_BITS) && !defined(OS_NACL)
 
 }  // namespace internal
 }  // namespace base

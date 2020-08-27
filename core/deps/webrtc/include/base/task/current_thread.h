@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_MESSAGE_LOOP_MESSAGE_LOOP_CURRENT_H_
-#define BASE_MESSAGE_LOOP_MESSAGE_LOOP_CURRENT_H_
+#ifndef BASE_TASK_CURRENT_THREAD_H_
+#define BASE_TASK_CURRENT_THREAD_H_
 
 #include <ostream>
 
 #include "base/base_export.h"
-#include "base/logging.h"
+#include "base/check.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/message_loop/message_pump_for_io.h"
 #include "base/message_loop/message_pump_for_ui.h"
@@ -29,65 +29,70 @@ class SequenceManagerImpl;
 }
 }  // namespace sequence_manager
 
-// MessageLoopCurrent is a proxy to the public interface of the MessageLoop
-// bound to the thread it's obtained on.
+// CurrentThread is a proxy to a subset of Task related APIs bound to the
+// current thread
 //
-// MessageLoopCurrent(ForUI|ForIO) is available statically through
-// MessageLoopCurrent(ForUI|ForIO)::Get() on threads that have a matching
-// MessageLoop instance. APIs intended for all consumers on the thread should be
-// on MessageLoopCurrent(ForUI|ForIO), while APIs intended for the owner of the
-// instance should be on MessageLoop(ForUI|ForIO).
+// Current(UI|IO)Thread is available statically through
+// Current(UI|IO)Thread::Get() on threads that have registered as CurrentThread
+// on this physical thread (e.g. by using SingleThreadTaskExecutor). APIs
+// intended for all consumers on the thread should be on Current(UI|IO)Thread,
+// while internal APIs might be on multiple internal classes (e.g.
+// SequenceManager).
 //
-// Why: Historically MessageLoop::current() gave access to the full MessageLoop
-// API, preventing both addition of powerful owner-only APIs as well as making
-// it harder to remove callers of deprecated APIs (that need to stick around for
-// a few owner-only use cases and re-accrue callers after cleanup per remaining
-// publicly available).
+// Why: Historically MessageLoop would take care of everything related to event
+// processing on a given thread. Nowadays that functionality is split among
+// different classes. At that time MessageLoop::current() gave access to the
+// full MessageLoop API, preventing both addition of powerful owner-only APIs as
+// well as making it harder to remove callers of deprecated APIs (that need to
+// stick around for a few owner-only use cases and re-accrue callers after
+// cleanup per remaining publicly available).
 //
 // As such, many methods below are flagged as deprecated and should be removed
-// (or moved back to MessageLoop) once all static callers have been migrated.
-class BASE_EXPORT MessageLoopCurrent {
+// once all static callers have been migrated.
+class BASE_EXPORT CurrentThread {
  public:
-  // MessageLoopCurrent is effectively just a disguised pointer and is fine to
+  // CurrentThread is effectively just a disguised pointer and is fine to
   // copy/move around.
-  MessageLoopCurrent(const MessageLoopCurrent& other) = default;
-  MessageLoopCurrent(MessageLoopCurrent&& other) = default;
-  MessageLoopCurrent& operator=(const MessageLoopCurrent& other) = default;
+  CurrentThread(const CurrentThread& other) = default;
+  CurrentThread(CurrentThread&& other) = default;
+  CurrentThread& operator=(const CurrentThread& other) = default;
 
-  bool operator==(const MessageLoopCurrent& other) const;
+  bool operator==(const CurrentThread& other) const;
 
-  // Returns a proxy object to interact with the MessageLoop running the
+  // Returns a proxy object to interact with the Task related APIs for the
   // current thread. It must only be used on the thread it was obtained.
-  static MessageLoopCurrent Get();
+  static CurrentThread Get();
 
-  // Return an empty MessageLoopCurrent. No methods should be called on this
+  // Return an empty CurrentThread. No methods should be called on this
   // object.
-  static MessageLoopCurrent GetNull();
+  static CurrentThread GetNull();
 
-  // Returns true if the current thread is running a MessageLoop. Prefer this to
-  // verifying the boolean value of Get() (so that Get() can ultimately DCHECK
-  // it's only invoked when IsSet()).
+  // Returns true if the current thread is registered to expose CurrentThread
+  // API. Prefer this to verifying the boolean value of Get() (so that Get() can
+  // ultimately DCHECK it's only invoked when IsSet()).
   static bool IsSet();
 
-  // Allow MessageLoopCurrent to be used like a pointer to support the many
+  // Allow CurrentThread to be used like a pointer to support the many
   // callsites that used MessageLoop::current() that way when it was a
   // MessageLoop*.
-  MessageLoopCurrent* operator->() { return this; }
+  CurrentThread* operator->() { return this; }
   explicit operator bool() const { return !!current_; }
 
-  // A DestructionObserver is notified when the current MessageLoop is being
-  // destroyed.  These observers are notified prior to MessageLoop::current()
-  // being changed to return NULL.  This gives interested parties the chance to
-  // do final cleanup that depends on the MessageLoop.
+  // A DestructionObserver is notified when the current task execution
+  // environment is being destroyed. These observers are notified prior to
+  // CurrentThread::IsSet() being changed to return false. This gives interested
+  // parties the chance to do final cleanup.
   //
-  // NOTE: Any tasks posted to the MessageLoop during this notification will
-  // not be run.  Instead, they will be deleted.
+  // NOTE: Any tasks posted to the current thread during this notification will
+  // not be run. Instead, they will be deleted.
   //
   // Deprecation note: Prefer SequenceLocalStorageSlot<std::unique_ptr<Foo>> to
   // DestructionObserver to bind an object's lifetime to the current
   // thread/sequence.
   class BASE_EXPORT DestructionObserver {
    public:
+    // TODO(https://crbug.com/891670): Rename to
+    // WillDestroyCurrentTaskExecutionEnvironment
     virtual void WillDestroyCurrentMessageLoop() = 0;
 
    protected:
@@ -102,13 +107,13 @@ class BASE_EXPORT MessageLoopCurrent {
   // DestructionObserver is receiving a notification callback.
   void RemoveDestructionObserver(DestructionObserver* destruction_observer);
 
-  // Forwards to MessageLoop::SetTaskRunner().
-  // DEPRECATED(https://crbug.com/825327): only owners of the MessageLoop
+  // Forwards to SequenceManager::SetTaskRunner().
+  // DEPRECATED(https://crbug.com/825327): only owners of the SequenceManager
   // instance should replace its TaskRunner.
   void SetTaskRunner(scoped_refptr<SingleThreadTaskRunner> task_runner);
 
-  // Forwards to MessageLoop::(Add|Remove)TaskObserver.
-  // DEPRECATED(https://crbug.com/825327): only owners of the MessageLoop
+  // Forwards to SequenceManager::(Add|Remove)TaskObserver.
+  // DEPRECATED(https://crbug.com/825327): only owners of the SequenceManager
   // instance should add task observers on it.
   void AddTaskObserver(TaskObserver* task_observer);
   void RemoveTaskObserver(TaskObserver* task_observer);
@@ -152,23 +157,22 @@ class BASE_EXPORT MessageLoopCurrent {
   using ScopedNestableTaskAllower =
       ScopedAllowApplicationTasksInNativeNestedLoop;
 
-  // Returns true if nestable tasks are allowed on the current loop at this time
-  // (i.e. if a nested loop would start from the callee's point in the stack,
-  // would it be allowed to run application tasks).
+  // Returns true if nestable tasks are allowed on the current thread at this
+  // time (i.e. if a nested loop would start from the callee's point in the
+  // stack, would it be allowed to run application tasks).
   bool NestableTasksAllowed() const;
 
-  // Returns true if this is the active MessageLoop for the current thread.
+  // Returns true if this instance is bound to the current thread.
   bool IsBoundToCurrentThread() const;
 
-  // Returns true if the message loop is idle (ignoring delayed tasks). This is
-  // the same condition which triggers DoWork() to return false: i.e.
-  // out of tasks which can be processed at the current run-level -- there might
-  // be deferred non-nestable tasks remaining if currently in a nested run
-  // level.
+  // Returns true if the current thread is idle (ignoring delayed tasks). This
+  // is the same condition which triggers DoWork() to return false: i.e. out of
+  // tasks which can be processed at the current run-level -- there might be
+  // deferred non-nestable tasks remaining if currently in a nested run level.
   bool IsIdleForTesting();
 
  protected:
-  explicit MessageLoopCurrent(
+  explicit CurrentThread(
       sequence_manager::internal::SequenceManagerImpl* sequence_manager)
       : current_(sequence_manager) {}
 
@@ -187,22 +191,22 @@ class BASE_EXPORT MessageLoopCurrent {
 
 #if !defined(OS_NACL)
 
-// ForUI extension of MessageLoopCurrent.
-class BASE_EXPORT MessageLoopCurrentForUI : public MessageLoopCurrent {
+// UI extension of CurrentThread.
+class BASE_EXPORT CurrentUIThread : public CurrentThread {
  public:
-  // Returns an interface for the MessageLoopForUI of the current thread.
+  // Returns an interface for the CurrentUIThread of the current thread.
   // Asserts that IsSet().
-  static MessageLoopCurrentForUI Get();
+  static CurrentUIThread Get();
 
-  // Returns true if the current thread is running a MessageLoopForUI.
+  // Returns true if the current thread is running a CurrentUIThread.
   static bool IsSet();
 
-  MessageLoopCurrentForUI* operator->() { return this; }
+  CurrentUIThread* operator->() { return this; }
 
 #if defined(USE_OZONE) && !defined(OS_FUCHSIA) && !defined(OS_WIN)
   static_assert(
       std::is_base_of<WatchableIOMessagePumpPosix, MessagePumpForUI>::value,
-      "MessageLoopCurrentForUI::WatchFileDescriptor is supported only"
+      "CurrentThreadForUI::WatchFileDescriptor is supported only"
       "by MessagePumpLibevent and MessagePumpGlib implementations.");
   bool WatchFileDescriptor(int fd,
                            bool persistent,
@@ -212,18 +216,18 @@ class BASE_EXPORT MessageLoopCurrentForUI : public MessageLoopCurrent {
 #endif
 
 #if defined(OS_IOS)
-  // Forwards to MessageLoopForUI::Attach().
-  // TODO(https://crbug.com/825327): Plumb the actual MessageLoopForUI* to
+  // Forwards to SequenceManager::Attach().
+  // TODO(https://crbug.com/825327): Plumb the actual SequenceManager* to
   // callers and remove ability to access this method from
-  // MessageLoopCurrentForUI.
+  // CurrentUIThread.
   void Attach();
 #endif
 
 #if defined(OS_ANDROID)
-  // Forwards to MessageLoopForUI::Abort().
-  // TODO(https://crbug.com/825327): Plumb the actual MessageLoopForUI* to
+  // Forwards to MessagePumpForUI::Abort().
+  // TODO(https://crbug.com/825327): Plumb the actual MessagePumpForUI* to
   // callers and remove ability to access this method from
-  // MessageLoopCurrentForUI.
+  // CurrentUIThread.
   void Abort();
 #endif
 
@@ -233,26 +237,26 @@ class BASE_EXPORT MessageLoopCurrentForUI : public MessageLoopCurrent {
 #endif
 
  private:
-  explicit MessageLoopCurrentForUI(
+  explicit CurrentUIThread(
       sequence_manager::internal::SequenceManagerImpl* current)
-      : MessageLoopCurrent(current) {}
+      : CurrentThread(current) {}
 
   MessagePumpForUI* GetMessagePumpForUI() const;
 };
 
 #endif  // !defined(OS_NACL)
 
-// ForIO extension of MessageLoopCurrent.
-class BASE_EXPORT MessageLoopCurrentForIO : public MessageLoopCurrent {
+// ForIO extension of CurrentThread.
+class BASE_EXPORT CurrentIOThread : public CurrentThread {
  public:
-  // Returns an interface for the MessageLoopForIO of the current thread.
+  // Returns an interface for the CurrentIOThread of the current thread.
   // Asserts that IsSet().
-  static MessageLoopCurrentForIO Get();
+  static CurrentIOThread Get();
 
-  // Returns true if the current thread is running a MessageLoopForIO.
+  // Returns true if the current thread is running a CurrentIOThread.
   static bool IsSet();
 
-  MessageLoopCurrentForIO* operator->() { return this; }
+  CurrentIOThread* operator->() { return this; }
 
 #if !defined(OS_NACL_SFI)
 
@@ -271,7 +275,7 @@ class BASE_EXPORT MessageLoopCurrentForIO : public MessageLoopCurrent {
                            MessagePumpForIO::FdWatcher* delegate);
 #endif  // defined(OS_WIN)
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if defined(OS_MAC)
   bool WatchMachReceivePort(
       mach_port_t port,
       MessagePumpForIO::MachPortWatchController* controller,
@@ -290,13 +294,13 @@ class BASE_EXPORT MessageLoopCurrentForIO : public MessageLoopCurrent {
 #endif  // !defined(OS_NACL_SFI)
 
  private:
-  explicit MessageLoopCurrentForIO(
+  explicit CurrentIOThread(
       sequence_manager::internal::SequenceManagerImpl* current)
-      : MessageLoopCurrent(current) {}
+      : CurrentThread(current) {}
 
   MessagePumpForIO* GetMessagePumpForIO() const;
 };
 
 }  // namespace base
 
-#endif  // BASE_MESSAGE_LOOP_MESSAGE_LOOP_CURRENT_H_
+#endif  // BASE_TASK_CURRENT_THREAD_H_
