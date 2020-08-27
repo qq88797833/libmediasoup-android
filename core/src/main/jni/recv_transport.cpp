@@ -27,12 +27,12 @@ extern "C"
 {
   JNI_DEFINE_METHOD(jobject, RecvTransport, nativeConsume, jlong j_transport, jobject j_listener, jstring j_id, jstring j_producerId, jstring j_kind, jstring j_rtpParameters, jstring j_appData)
   {
-    auto listener = new ConsumerListenerJni(env, JavaParamRef<jobject>(env, j_listener));
-    auto id = JavaToNativeString(env, JavaParamRef<jstring>(env, j_id));
-    auto producerId = JavaToNativeString(env, JavaParamRef<jstring>(env, j_producerId));
-    auto kind = JavaToNativeString(env, JavaParamRef<jstring>(env, j_kind));
     return handleNativeCrash(env,
                              [&]() {
+                               auto listener = new ConsumerListenerJni(env, JavaParamRef<jobject>(env, j_listener));
+                               auto id = JavaToNativeString(env, JavaParamRef<jstring>(env, j_id));
+                               auto producerId = JavaToNativeString(env, JavaParamRef<jstring>(env, j_producerId));
+                               auto kind = JavaToNativeString(env, JavaParamRef<jstring>(env, j_kind));
                                auto rtpParameters = json::object();
                                if (j_rtpParameters != nullptr)
                                {
